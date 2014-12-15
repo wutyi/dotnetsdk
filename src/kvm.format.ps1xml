@@ -1,0 +1,59 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<Configuration>
+	<ViewDefinitions>
+		<View>
+			<Name>Kvm Runtime</Name>
+			<ViewSelectedBy>
+				<TypeName>Kvm.Runtime</TypeName>
+			</ViewSelectedBy>
+			<TableControl>
+				<AutoSize />
+				<TableHeaders>
+					<TableColumnHeader>
+						<Label>Active</Label>
+						<Alignment>Center</Alignment>
+					</TableColumnHeader>
+					<TableColumnHeader>
+						<Label>Version</Label>
+					</TableColumnHeader>
+					<TableColumnHeader>
+						<Label>Runtime</Label>
+					</TableColumnHeader>
+					<TableColumnHeader>
+						<Label>Architecture</Label>
+					</TableColumnHeader>
+					<TableColumnHeader>
+						<Label>Location</Label>
+					</TableColumnHeader>
+					<TableColumnHeader>
+						<Label>Aliases</Label>
+					</TableColumnHeader>
+				</TableHeaders>
+				<TableRowEntries>
+					<TableRowEntry>
+						<TableColumnItems>
+							<TableColumnItem>
+								<ScriptBlock>if($_.Active) { "*" } else { "" }</ScriptBlock>
+							</TableColumnItem>
+							<TableColumnItem>
+								<PropertyName>Version</PropertyName>
+							</TableColumnItem>
+							<TableColumnItem>
+								<PropertyName>Runtime</PropertyName>
+							</TableColumnItem>
+							<TableColumnItem>
+								<PropertyName>Architecture</PropertyName>
+							</TableColumnItem>
+							<TableColumnItem>
+								<PropertyName>Location</PropertyName>
+							</TableColumnItem>
+							<TableColumnItem>
+								<ScriptBlock>[String]::Join(", ", $_.Aliases)</ScriptBlock>
+							</TableColumnItem>
+						</TableColumnItems>
+					</TableRowEntry>
+				</TableRowEntries>
+			</TableControl>
+		</View>
+	</ViewDefinitions>
+</Configuration>

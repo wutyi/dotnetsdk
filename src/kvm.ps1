@@ -16,8 +16,8 @@ param(
   #deprecated
   [switch] $Svrc50 = $false,
   [alias("w")][switch] $Wait = $false,
-  [alias("a")]
-  [string] $Alias = $null,
+  [alias("n")][switch] $WhatIf = $false,
+  [alias("a")][string] $Alias = $null,
   [switch] $NoNative = $false,
   [parameter(Position=1, ValueFromRemainingArguments=$true)]
   [string[]]$Args=@()
@@ -43,6 +43,8 @@ if (!$feed)
 }
 
 $scriptPath = $myInvocation.MyCommand.Definition
+
+Update-FormatData (Join-Path (Split-Path -Parent $scriptPath) "kvm.format.ps1xml")
 
 function Kvm-Help {
 @"
@@ -91,6 +93,10 @@ kvm alias <alias> <semver>|<alias> [-X86][-Amd64] [-r|-Runtime CLR|CoreCLR]
 
 kvm unalias <alias>
   remove the specified alias
+
+kvm prune [-WhatIf]
+  removes all but the most recent version of each runtime/architecture pairing and removes any aliases
+  which refer to them
 
 "@ -replace "`n","`r`n" | Write-Host
 }
@@ -382,9 +388,10 @@ function Kvm-List {
     $kreHome = "$globalKrePath;$userKrePath"
   }
 
-  md ($userKrePath + "\alias\") -Force | Out-Null
-  $aliases = Get-ChildItem ($userKrePath + "\alias\") | Select @{label='Alias';expression={$_.BaseName}}, @{label='Name';expression={Get-Content $_.FullName }}
+  # Load Aliases
+  $aliases = Kvm-Alias-List
 
+  # Load KVMs
   $items = @()
   foreach($portion in $kreHome.Split(';')) {
     $path = [System.Environment]::ExpandEnvironmentVariables($portion)
@@ -392,8 +399,7 @@ function Kvm-List {
       $items += Get-ChildItem ("$path\packages\KRE-*") | List-Parts $aliases
     }
   }
-
-  $items | Sort-Object Version, Runtime, Architecture, Alias | Format-Table -AutoSize -Property @{name="Active";expression={$_.Active};alignment="center"}, "Version", "Runtime", "Architecture", "Location", "Alias"
+  $items | Sort-Object Version, Runtime, Architecture, Alias
 }
 
 filter List-Parts {
@@ -410,26 +416,27 @@ filter List-Parts {
     }
   }
 
-  $fullAlias=""
+  $fullAlias=@()
   $delim=""
 
   foreach($alias in $aliases){
     if($_.Name.Split('\', 2) -contains $alias.Name){
-        $fullAlias += $delim + $alias.Alias
-        $delim = ", "
+        $fullAlias += @($alias.Alias)
     }
   }
 
   $parts1 = $_.Name.Split('.', 2)
   $parts2 = $parts1[0].Split('-', 3)
-  return New-Object PSObject -Property @{
-    Active = if ($active) { "*" } else { "" }
+  $obj = New-Object PSObject -Property @{
+    Active = $active
     Version = $parts1[1]
     Runtime = $parts2[1]
     Architecture = $parts2[2]
     Location = $_.Parent.FullName
-    Alias = $fullAlias
+    Aliases = $fullAlias
   }
+  $obj.PSObject.TypeNames.Insert(0, "Kvm.Runtime")
+  $obj
 }
 
 function Kvm-Global-Use {
@@ -525,23 +532,29 @@ param(
   }
 }
 
+filter List-Alias {
+  $obj = New-Object PSObject -Property @{
+    "Alias"=$_.BaseName;
+    "Name"=(Get-Content $_.FullName)
+  }
+  $obj.PSObject.TypeNames.Insert(0, "Kvm.Alias")
+  $obj
+}
+
 function Kvm-Alias-List {
   md ($userKrePath + "\alias\") -Force | Out-Null
-
-  Get-ChildItem ($userKrePath + "\alias\") | Select @{label='Alias';expression={$_.BaseName}}, @{label='Name';expression={Get-Content $_.FullName }} | Format-Table -AutoSize
+  Get-ChildItem ($userKrePath + "\alias\") | List-Alias
 }
 
 function Kvm-Alias-Get {
 param(
   [string] $name
 )
-  md ($userKrePath + "\alias\") -Force | Out-Null
-  $aliasFilePath=$userKrePath + "\alias\" + $name + ".txt"
-  if (!(Test-Path $aliasFilePath)) {
+  $alias = Kvm-Alias-List | Where-Object { $_.Alias -eq $name }
+  if(!$alias) {
     Write-Host "Alias '$name' does not exist"
-  } else {
-    Write-Host "Alias '$name' is set to" (Get-Content ($userKrePath + "\alias\" + $name + ".txt"))
   }
+  $alias
 }
 
 function Kvm-Alias-Set {
