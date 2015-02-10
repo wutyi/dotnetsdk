@@ -551,6 +551,11 @@ SET "PATH=$newPath"
     }
 }
 
+function Is-Elevated() {
+    $user = [Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()
+    return $user.IsInRole([Security.Principal.WindowsBuiltInRole] "Administrator")
+}
+
 ### Commands
 
 <#
@@ -898,6 +903,8 @@ function kvm-install {
         _WriteOut "'$runtimeFullName' is already installed."
     }
     else {
+        $Architecture = GetArch $Architecture
+        $Runtime = GetRuntime $Runtime
         $UnpackFolder = Join-Path $RuntimesDir "temp"
         $DownloadFile = Join-Path $UnpackFolder "$runtimeFullName.nupkg"
 
@@ -925,10 +932,29 @@ function kvm-install {
         _WriteDebug "Cleaning temporary directory $UnpackFolder"
         Remove-Item $UnpackFolder -Force | Out-Null
 
-        
         kvm-use $PackageVersion -Architecture:$Architecture -Runtime:$Runtime
 
-        if ($runtimeFullName.Contains("coreclr")) {
+        if ($Runtime -eq "clr") {
+            if ($NoNative) {
+                _WriteOut "Native image generation (ngen) is skipped"
+            }
+            else {
+                $runtimeBin = Get-RuntimePath $runtimeFullName
+                $ngenCmd = "$PSScriptRoot\k-ngen.ps1 -runtimeBin $runtimeBin -architecture $Architecture"
+
+                If (Is-Elevated) {
+                    $ngenProc = Start-Process "$psHome\powershell.exe" -ArgumentList $ngenCmd -Wait -PassThru
+                }
+                else {
+                    $ngenProc = Start-Process "$psHome\powershell.exe" -Verb runAs -ArgumentList "-ExecutionPolicy unrestricted & $ngenCmd" -Wait -PassThru
+                }
+
+                if ($ngenProc.ExitCode -ne 0) {
+                    _WriteOut "Unable to ngen runtime libraries."
+                }
+            }
+        }
+        elseif ($Runtime -eq "coreclr") {
             if ($NoNative) {
               _WriteOut "Skipping native image compilation."
             }
@@ -937,6 +963,9 @@ function kvm-install {
               Start-Process $CrossGenCommand -Wait
               _WriteOut "Finished native image compilation."
             }
+        }
+        else {
+            _WriteOut "Unexpected platform: $Runtime. No optimization would be performed on the package installed."
         }
     }
 
