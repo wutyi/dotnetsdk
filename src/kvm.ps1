@@ -551,11 +551,6 @@ SET "PATH=$newPath"
     }
 }
 
-function Is-Elevated() {
-    $user = [Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()
-    return $user.IsInRole([Security.Principal.WindowsBuiltInRole] "Administrator")
-}
-
 function Ngen-Library(
     [Parameter(Mandatory=$true)]
     [string]$runtimeBin,
@@ -585,12 +580,7 @@ function Ngen-Library(
         $ngenCmds += "$ngenExe install $($bin.FullName);"
     }
 
-    If (Is-Elevated) {
-        $ngenProc = Start-Process "$psHome\powershell.exe" -ArgumentList $ngenCmds -Wait -PassThru
-    }
-    else {
-        $ngenProc = Start-Process "$psHome\powershell.exe" -Verb runAs -ArgumentList "-ExecutionPolicy unrestricted & $ngenCmds" -Wait -PassThru
-    }
+    $ngenProc = Start-Process "$psHome\powershell.exe" -Verb runAs -ArgumentList "-ExecutionPolicy unrestricted & $ngenCmds" -Wait -PassThru
 }
 
 ### Commands
