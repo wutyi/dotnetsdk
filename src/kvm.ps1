@@ -556,6 +556,43 @@ function Is-Elevated() {
     return $user.IsInRole([Security.Principal.WindowsBuiltInRole] "Administrator")
 }
 
+function Ngen-Library(
+    [Parameter(Mandatory=$true)]
+    [string]$runtimeBin,
+
+    [ValidateSet("x86","x64")]
+    [Parameter(Mandatory=$true)]
+    [string]$architecture) {
+
+    if ($architecture -eq 'x64') {
+        $regView = [Microsoft.Win32.RegistryView]::Registry64
+    }
+    elseif ($architecture -eq 'x86') {
+        $regView = [Microsoft.Win32.RegistryView]::Registry32
+    }
+    else {
+        _WriteOut "Installation does not understand architecture $architecture, skipping ngen..."
+        return
+    }
+
+    $regHive = [Microsoft.Win32.RegistryHive]::LocalMachine
+    $regKey = [Microsoft.Win32.RegistryKey]::OpenBaseKey($regHive, $regView)
+    $frameworkPath = $regKey.OpenSubKey("SOFTWARE\Microsoft\NET Framework Setup\NDP\v4\Full").GetValue("InstallPath")
+    $ngenExe = Join-Path $frameworkPath 'ngen.exe'
+
+    $ngenCmds = ""
+    foreach ($bin in Get-ChildItem $runtimeBin -Filter "Microsoft.CodeAnalysis.CSharp.dll") {
+        $ngenCmds += "$ngenExe install $($bin.FullName);"
+    }
+
+    If (Is-Elevated) {
+        $ngenProc = Start-Process "$psHome\powershell.exe" -ArgumentList $ngenCmds -Wait -PassThru
+    }
+    else {
+        $ngenProc = Start-Process "$psHome\powershell.exe" -Verb runAs -ArgumentList "-ExecutionPolicy unrestricted & $ngenCmds" -Wait -PassThru
+    }
+}
+
 ### Commands
 
 <#
@@ -940,18 +977,7 @@ function kvm-install {
             }
             else {
                 $runtimeBin = Get-RuntimePath $runtimeFullName
-                $ngenCmd = "$PSScriptRoot\k-ngen.ps1 -runtimeBin $runtimeBin -architecture $Architecture"
-
-                If (Is-Elevated) {
-                    $ngenProc = Start-Process "$psHome\powershell.exe" -ArgumentList $ngenCmd -Wait -PassThru
-                }
-                else {
-                    $ngenProc = Start-Process "$psHome\powershell.exe" -Verb runAs -ArgumentList "-ExecutionPolicy unrestricted & $ngenCmd" -Wait -PassThru
-                }
-
-                if ($ngenProc.ExitCode -ne 0) {
-                    _WriteOut "Unable to ngen runtime libraries."
-                }
+                Ngen-Library $runtimeBin $Architecture
             }
         }
         elseif ($Runtime -eq "coreclr") {
