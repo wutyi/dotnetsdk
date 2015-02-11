@@ -583,6 +583,11 @@ function Ngen-Library(
     $ngenProc = Start-Process "$psHome\powershell.exe" -Verb runAs -ArgumentList "-ExecutionPolicy unrestricted & $ngenCmds" -Wait -PassThru
 }
 
+function Is-Elevated() {
+    $user = [Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()
+    return $user.IsInRole([Security.Principal.WindowsBuiltInRole] "Administrator")
+}
+
 ### Commands
 
 <#
@@ -803,8 +808,10 @@ function kvm-unalias {
     Overwrite an existing runtime if it already exists
 .PARAMETER Proxy
     Use the given address as a proxy when accessing remote server
-.Parameter NoNative
-    Skip generation of native images when installing coreclr runtime flavors
+.PARAMETER NoNative
+    Skip generation of native images
+.PARAMETER Ngen
+    For CLR flavor only. Ngen XRE libraries for faster startup. This option requires elevated privilege and will be automatically turned on if the script is running in administrative mode. To opt-out in administrative mode, use -NoNative switch.
 #>
 function kvm-upgrade {
     param(
@@ -830,9 +837,12 @@ function kvm-upgrade {
         [string]$Proxy,
 
         [Parameter(Mandatory=$false)]
-        [switch]$NoNative)
+        [switch]$NoNative,
 
-    kvm-install "latest" -Alias:$Alias -Architecture:$Architecture -Runtime:$Runtime -Force:$Force -Proxy:$Proxy -NoNative:$NoNative
+        [Parameter(Mandatory=$false)]
+        [switch]$Ngen)
+
+    kvm-install "latest" -Alias:$Alias -Architecture:$Architecture -Runtime:$Runtime -Force:$Force -Proxy:$Proxy -NoNative:$NoNative -Ngen:$Ngen
 }
 
 <#
@@ -851,8 +861,10 @@ function kvm-upgrade {
     Overwrite an existing runtime if it already exists
 .PARAMETER Proxy
     Use the given address as a proxy when accessing remote server
-.Parameter NoNative
-    Skip generation of native images when installing coreclr runtime flavors
+.PARAMETER NoNative
+    Skip generation of native images
+.PARAMETER Ngen
+    For CLR flavor only. Ngen XRE libraries for faster startup. This option requires elevated privilege and will be automatically turned on if the script is running in administrative mode. To opt-out in administrative mode, use -NoNative switch.
 
 .DESCRIPTION
     A proxy can also be specified by using the 'http_proxy' environment variable
@@ -885,7 +897,10 @@ function kvm-install {
         [string]$Proxy,
 
         [Parameter(Mandatory=$false)]
-        [switch]$NoNative)
+        [switch]$NoNative,
+
+        [Parameter(Mandatory=$false)]
+        [switch]$Ngen)
 
     if(!$VersionOrNuPkg) {
         _WriteOut "A version, nupkg path, or the string 'latest' must be provided."
@@ -962,12 +977,14 @@ function kvm-install {
         kvm-use $PackageVersion -Architecture:$Architecture -Runtime:$Runtime
 
         if ($Runtime -eq "clr") {
-            if ($NoNative) {
-                _WriteOut "Native image generation (ngen) is skipped"
-            }
-            else {
-                $runtimeBin = Get-RuntimePath $runtimeFullName
-                Ngen-Library $runtimeBin $Architecture
+            if (-not $NoNative) {
+                if ((Is-Elevated) -or $Ngen) {
+                    $runtimeBin = Get-RuntimePath $runtimeFullName
+                    Ngen-Library $runtimeBin $Architecture
+                }
+                else {
+                    _WriteOut "Native image generation (ngen) is skipped. Include -Ngen switch to turn on native image generation to improve application startup time."
+                }
             }
         }
         elseif ($Runtime -eq "coreclr") {
